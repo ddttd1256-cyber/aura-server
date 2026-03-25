@@ -5,7 +5,7 @@ import sqlite3
 
 app = FastAPI()
 
-# Разрешаем твоему сайту на GitHub общаться с этим сервером
+# Разрешаем твоему сайту общаться с этим сервером
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -70,3 +70,35 @@ def get_chat(user1: str, user2: str):
     msgs = [{"sender": row[0], "text": row[1]} for row in c.fetchall()]
     conn.close()
     return {"messages": msgs}
+
+# --- НОВЫЕ РОУТЫ ---
+
+@app.get("/get_chats/{username}")
+def get_chats(username: str):
+    conn = sqlite3.connect("aura.db")
+    c = conn.cursor()
+    # Ищем всех уникальных собеседников: кому писал юзер И кто писал юзеру
+    c.execute('''
+        SELECT DISTINCT recipient FROM messages WHERE sender=?
+        UNION
+        SELECT DISTINCT sender FROM messages WHERE recipient=?
+    ''', (username, username))
+    
+    # Собираем в один список и убираем самого себя из списка (если человек писал в "Избранное")
+    chats = [row[0] for row in c.fetchall() if row[0] != username]
+    conn.close()
+    
+    return {"chats": chats}
+
+@app.delete("/delete_user/{username}")
+def delete_user(username: str):
+    conn = sqlite3.connect("aura.db")
+    c = conn.cursor()
+    # Удаляем пользователя из таблицы users
+    c.execute("DELETE FROM users WHERE username=?", (username,))
+    # Удаляем всю историю сообщений, связанную с этим пользователем
+    c.execute("DELETE FROM messages WHERE sender=? OR recipient=?", (username, username))
+    conn.commit()
+    conn.close()
+    
+    return {"status": "deleted"}
